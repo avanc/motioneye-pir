@@ -19,11 +19,58 @@ PIR_GPIO=4
 INTERNAL_RESISTOR=GPIO.PUD_DOWN; #PUD_OFF, PUD_DOWN, PID_UP
 DELAY=2000 #ms
 
-state={
-  "ts": 0,
-  "mode": "idle",
-  "timer": None
-}
+class MotionWrapper:
+  def __init__(self):
+    logger.debug("Constructor of MotionWrapper")
+    self.mode="idle"
+    self.timer=None
+  
+  def cleanup(self):
+    if (self.timer):
+      self.timer.cancel();
+      self.timer=None;
+    if (self.mode!="idle"):
+      self.logger.debug("Cancel recording")
+      self.recording_stop();
+
+    
+  def detected(self, motion):
+    if (self.timer):
+      self.timer.cancel();
+      self.timer=None;
+
+    if (motion):
+      logger.info("Motion detected");
+      self.mode="motion"
+      self.recording_start()
+    
+      # Stop video at least after 10 minutes
+      self.timer=threading.Timer(20.0, self.recording_stop)
+      self.timer.start()
+    else:
+      logger.info("No Motion detected");
+      self.mode="nomotion"
+      self.timer=threading.Timer(5.0, self.recording_stop)
+      self.timer.start()
+
+  def recording_start(self):
+    rc = http_req(1)
+    logger.debug(rc)
+    
+  def recording_stop(self):
+    self.logger.info("Stop recording")
+    if (self.timer):
+      self.timer.cancel();
+    self.timer=None;
+
+    rc = http_req(0)
+    self.logger.debug(rc)
+    self.mode="idle"
+
+
+
+motion=MotionWrapper()
+
 
 prev_state=None
 
@@ -33,45 +80,18 @@ prev_state=None
 import signal
 def handle_signals(signum, stack):
   logger.debug("Received signal {signal}".format(signal=signum))
-  if signum == signal.SIGTERM or signum == signal.SIGINT:
-    exit_thread.set()
+
 
 
 def callback_motion(channel):
   gpio_state = GPIO.input(PIR_GPIO)
-  ts = time.time()
-  
-  if (state["timer"]):
-    state["timer"].cancel();
-    state["timer"]=None;
-
-  state["ts"]=ts
   
   if (gpio_state):
-    logger.info("Motion detected");
-    rc = http_req(1)
-    logger.debug(rc)
-    
-    state["mode"]="motion"
-    # Stop video at least after 10 minutes
-    state["timer"]=threading.Timer(15.0, callback_stopRecording)
-    state["timer"].start()
+    motion.detected(True)
   else:
-    logger.info("No Motion detected");
-    state["mode"]="nomotion"
-    state["timer"]=threading.Timer(5.0, callback_stopRecording)
-    state["timer"].start()
+    motion.detected(False)
 
 
-def callback_stopRecording():
-  ts = time.time()
-  logger.info("Recording stopped")
-  rc = http_req(0)
-  logger.debug(rc)
-
-  state["mode"]="idle"
-  state["ts"]=ts
-  state["timer"]=None;
 
 
 
@@ -107,13 +127,15 @@ def run():
   #GPIO.setwarnings(False) # Ignore warning for now
   #GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
   GPIO.setmode(GPIO.BCM) # Use GPIO numbering
-
   GPIO.setup(PIR_GPIO, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
+
   GPIO.add_event_detect(PIR_GPIO,GPIO.BOTH,callback=callback_motion) 
 
   # Wait for exit
   signal.pause()
   
+  global motion
+  motion.cleanup()
   GPIO.cleanup() # Clean up
   logger.debug("Bye")
 

@@ -1,29 +1,38 @@
 #! /bin/python
 
-#https://raspberrypihq.com/use-a-push-button-with-raspberry-pi-gpio/
+# Script to activate video recording using a PIR sensor
+# This script is heavily based on the initial code on https://github.com/ccrisan/motioneyeos/issues/842#issuecomment-414375686 by jasaw
 
-#https://github.com/ccrisan/motioneyeos/issues/842#issuecomment-414375686
+############################
+# Configuration parameters #
+############################
+PIR_GPIO = 4 # GPIO numbering
+#PIR_PIN = 7 # Alternatively set the physical pin number
+
+INTERNAL_RESISTOR=GPIO.PUD_OFF; #PUD_OFF for PIR sensor, PUD_DOWN for testing putton
+STOP_DELAY=10.0 # (seconds) Delayed stop after recording
+MAX_LENGTH=3600.0 # (seconds) Maximum length of clips
+BACKGROUND=True # Run script in background as daemon
+
+
+# If you have suggestions or improvements for the code below,
+# consider opening an issue or pull request at
+# https://github.com/avanc/motioneye-pir
 
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("PIR Sensor")
 logger.setLevel(logging.DEBUG)
 
-import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library
+import RPi.GPIO as GPIO
 import time
 import threading
 import pycurl
 import cStringIO
 
-PIR_GPIO=4
-INTERNAL_RESISTOR=GPIO.PUD_DOWN; #PUD_OFF for PIR sensor, PUD_DOWN for testing putton
-STOP_DELAY=10.0 # (seconds) Delayed stop after recording
-MAX_LENGTH=3600.0 # (seconds) Maximum length of clips
-BACKGROUND=True # Run script in background as daemon
 
 class MotionWrapper:
   def __init__(self):
-    logger.debug("Constructor of MotionWrapper")
     self.mode="idle"
     self.timer=None
   
@@ -35,7 +44,6 @@ class MotionWrapper:
       self.logger.debug("Cancel recording")
       self.recording_stop();
 
-    
   def detected(self, motion):
     if (self.timer):
       self.timer.cancel();
@@ -46,7 +54,7 @@ class MotionWrapper:
       self.mode="motion"
       self.recording_start()
     
-      # Stop video at least after 10 minutes
+      # Stop video at least after MAX_LENGTH seconds
       self.timer=threading.Timer(MAX_LENGTH, self.recording_stop)
       self.timer.start()
     else:
@@ -69,13 +77,7 @@ class MotionWrapper:
     self.logger.debug(rc)
     self.mode="idle"
 
-
-
 motion=MotionWrapper()
-
-
-prev_state=None
-
 
 
 # Signal handler
@@ -83,8 +85,7 @@ import signal
 def handle_signals(signum, stack):
   logger.debug("Received signal {signal}".format(signal=signum))
 
-
-
+# GPIO event callback
 def callback_motion(channel):
   gpio_state = GPIO.input(PIR_GPIO)
   
@@ -93,10 +94,8 @@ def callback_motion(channel):
   else:
     motion.detected(False)
 
-
-
-
-
+# HTTP request to communicate with motion
+prev_state=None
 def http_req(motion):
   global prev_state
   if (prev_state!=motion):
@@ -172,11 +171,12 @@ def run():
   if (BACKGROUND):
     createDaemon()
 
-  # Set-Up GPIO
-  #GPIO.setwarnings(False) # Ignore warning for now
-  #GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
-  GPIO.setmode(GPIO.BCM) # Use GPIO numbering
-  GPIO.setup(PIR_GPIO, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
+  if (PIR_PIN is not None):
+    GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
+    GPIO.setup(PIR_PIN, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
+  else:
+    GPIO.setmode(GPIO.BCM) # Use GPIO numbering
+    GPIO.setup(PIR_GPIO, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
 
   GPIO.add_event_detect(PIR_GPIO,GPIO.BOTH,callback=callback_motion) 
 
@@ -185,7 +185,7 @@ def run():
   
   global motion
   motion.cleanup()
-  GPIO.cleanup() # Clean up
+  GPIO.cleanup()
   logger.debug("Bye")
 
 

@@ -16,8 +16,10 @@ import pycurl
 import cStringIO
 
 PIR_GPIO=4
-INTERNAL_RESISTOR=GPIO.PUD_DOWN; #PUD_OFF, PUD_DOWN, PID_UP
-DELAY=2000 #ms
+INTERNAL_RESISTOR=GPIO.PUD_DOWN; #PUD_OFF for PIR sensor, PUD_DOWN for testing putton
+STOP_DELAY=10.0 # (seconds) Delayed stop after recording
+MAX_LENGTH=3600.0 # (seconds) Maximum length of clips
+BACKGROUND=True # Run script in background as daemon
 
 class MotionWrapper:
   def __init__(self):
@@ -45,12 +47,12 @@ class MotionWrapper:
       self.recording_start()
     
       # Stop video at least after 10 minutes
-      self.timer=threading.Timer(20.0, self.recording_stop)
+      self.timer=threading.Timer(MAX_LENGTH, self.recording_stop)
       self.timer.start()
     else:
       logger.info("No Motion detected");
       self.mode="nomotion"
-      self.timer=threading.Timer(5.0, self.recording_stop)
+      self.timer=threading.Timer(STOP_DELAY, self.recording_stop)
       self.timer.start()
 
   def recording_start(self):
@@ -119,9 +121,56 @@ def http_req(motion):
     return response_code
 
 
+import os
+def createDaemon():
+    UMASK = 0
+    WORKDIR = "/"
+    MAXFD = 1024
+    REDIRECT_TO = "/dev/null"
+    if (hasattr(os, "devnull")):
+        REDIRECT_TO = os.devnull
+
+    try:
+        pid = os.fork()
+    except OSError, e:
+        raise Exception, "%s [%d]" % (e.strerror, e.errno)
+    if (pid == 0):
+        os.setsid()
+        try:
+            pid = os.fork()
+        except OSError, e:
+            raise Exception, "%s [%d]" % (e.strerror, e.errno)
+
+        if (pid == 0):
+            os.chdir(WORKDIR)
+            os.umask(UMASK)
+            logger.info("Daemon started with PID {pid}".format(pid=os.getpid()))
+        else:
+            os._exit(0)
+    else:
+        os._exit(0)
+
+    import resource
+    maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+    if (maxfd == resource.RLIM_INFINITY):
+        maxfd = MAXFD
+    for fd in range(0, maxfd):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    os.open(REDIRECT_TO, os.O_RDWR)
+    os.dup2(0, 1)
+    os.dup2(0, 2)
+    return(0)
+
+
 def run():
   signal.signal(signal.SIGTERM, handle_signals)
   signal.signal(signal.SIGINT, handle_signals)
+
+  if (BACKGROUND):
+    createDaemon()
 
   # Set-Up GPIO
   #GPIO.setwarnings(False) # Ignore warning for now

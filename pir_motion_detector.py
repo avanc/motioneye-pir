@@ -9,7 +9,7 @@
 PIR_GPIO = 4 # GPIO numbering
 #PIR_PIN = 7 # Alternatively set the physical pin number
 
-INTERNAL_RESISTOR=GPIO.PUD_OFF; #PUD_OFF for PIR sensor, PUD_DOWN for testing putton
+INTERNAL_RESISTOR="off"; # off for PIR sensor, pull-down for button connected to 3.3V
 STOP_DELAY=10.0 # (seconds) Delayed stop after recording
 MAX_LENGTH=3600.0 # (seconds) Maximum length of clips
 BACKGROUND=True # Run script in background as daemon
@@ -30,6 +30,13 @@ import threading
 import pycurl
 import cStringIO
 
+if (INTERNAL_RESISTOR=="pull-down"):
+  INTERNAL_RESISTOR=GPIO.PUD_DOWN
+elif (INTERNAL_RESISTOR=="pull-up"):
+  INTERNAL_RESISTOR=GPIO.PUD_UP
+else:
+  INTERNAL_RESISTOR=GPIO.PUD_OFF
+
 
 class MotionWrapper:
   def __init__(self):
@@ -41,7 +48,7 @@ class MotionWrapper:
       self.timer.cancel();
       self.timer=None;
     if (self.mode!="idle"):
-      self.logger.debug("Cancel recording")
+      logger.debug("Cancel recording")
       self.recording_stop();
 
   def detected(self, motion):
@@ -68,13 +75,13 @@ class MotionWrapper:
     logger.debug(rc)
     
   def recording_stop(self):
-    self.logger.info("Stop recording")
+    logger.info("Stop recording")
     if (self.timer):
       self.timer.cancel();
     self.timer=None;
 
     rc = http_req(0)
-    self.logger.debug(rc)
+    logger.debug(rc)
     self.mode="idle"
 
 motion=MotionWrapper()
@@ -171,12 +178,15 @@ def run():
   if (BACKGROUND):
     createDaemon()
 
-  if (PIR_PIN is not None):
-    GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
-    GPIO.setup(PIR_PIN, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
-  else:
+  
+  try:
+    PIR_PIN
+  except NameError:
     GPIO.setmode(GPIO.BCM) # Use GPIO numbering
     GPIO.setup(PIR_GPIO, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
+  else:
+    GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
+    GPIO.setup(PIR_PIN, GPIO.IN, pull_up_down=INTERNAL_RESISTOR)
 
   GPIO.add_event_detect(PIR_GPIO,GPIO.BOTH,callback=callback_motion) 
 

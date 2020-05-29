@@ -23,15 +23,9 @@ and make your config changes
     
 At least change the GPIO (PIR_GPIO) according your hardware setup. Alternatively, you can also set the physical pin number (PIR_PIN).
 
-Most PIR sensors have defined logic values (0V and 3.3V). However, if you are not using a PIR sensor and want to connect a switch for manually start recording (e.g. for testing), connect the switch between the pin and 3.3V and activate the internal pull-down resistor (INTERNAL_RESISTOR=GPIO.PUD_DOWN).
+Most PIR sensors have defined logic values (0V and 3.3V). However, if you are not using a PIR sensor and want to connect a button for manually start recording (e.g. for testing), connect the button between the pin and 3.3V and activate the internal pull-down resistor (INTERNAL_RESISTOR="pull-down").
 
-Activate script on boot within /data/etc/userinit.sh
+Activate script on boot by addinf following line to /data/etc/userinit.sh
 
-    .
-    .
-    .
     python /data/pir/pir_motion_detector.py
-    .
-    .
-    .    
 
